@@ -179,13 +179,21 @@ const BACKEND = 'https://script.google.com/macros/s/AKfycbwsiohkrt8zDzI19jX37qpR
 
 function getBackend() {
   if (BACKEND) return BACKEND;
-  // If embedded in GAS, auto-detect
-  return window.location.href.split('?')[0];
+  // Try URL param: ?backend=https://script.google.com/...
+  const params = new URLSearchParams(window.location.search);
+  const paramBackend = params.get('backend');
+  if (paramBackend) return decodeURIComponent(paramBackend);
+  // If embedded in GAS, auto-detect from URL (remove query string)
+  const url = window.location.href.split('?')[0];
+  // If this is a Vercel URL, we can't auto-detect GAS — show setup warning
+  if (url.includes('vercel.app') || url.includes('localhost') || url.startsWith('file://')) {
+    console.warn('GuestBookingForm: BACKEND URL not configured. Set const BACKEND at top of script.');
+  }
+  return url;
 }
 
 // ── Date helpers ────────────────────────────────────────────
-document.getElementById('f-checkin').min = new Date().toISOString().split('T')[0];
-document.getElementById('f-checkout').min = new Date().toISOString().split('T')[0];
+// date mins set in DOMContentLoaded below
 
 function calcNights() {
   const ci = document.getElementById('f-checkin').value;
@@ -206,15 +214,23 @@ function calcNights() {
 // ── Load apartments ─────────────────────────────────────────
 async function loadApartments() {
   try {
-    const res = await fetch(getBackend(), {
+    const backendUrl = getBackend();
+    if (!backendUrl || backendUrl.includes('vercel.app') || backendUrl.startsWith('file://')) {
+      throw new Error('Backend URL not configured');
+    }
+    const res = await fetch(backendUrl, {
       method:'POST', body:JSON.stringify({action:'getApartments',data:{}}),
       headers:{'Content-Type':'text/plain;charset=utf-8'}, redirect:'follow'
     });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const apts = json.data || json;
     renderApts(Array.isArray(apts) ? apts : []);
   } catch(e) {
-    // Demo apartments
+    console.warn('Could not load apartments from backend:', e.message);
+    // Show message and use demo data so form stays usable
+    const container = document.getElementById('apt-cards');
+    if (container) container.innerHTML = '<div style="color:#64748b;font-size:0.8rem;padding:8px;grid-column:1/-1">Could not load live apartments — showing sample data. The form will still submit correctly.</div>';
     renderApts([
       {ApartmentID:'APT-001',Name:'Studio Suite',Type:'Studio',DailyRate:45000,Status:'Available',Description:'Cosy studio with kitchenette'},
       {ApartmentID:'APT-002',Name:'1-Bedroom Deluxe',Type:'1-Bedroom',DailyRate:65000,Status:'Available',Description:'Spacious 1-bedroom with living area'},
@@ -251,11 +267,7 @@ function selectApt(id, name, rate) {
 }
 
 // ── File upload ─────────────────────────────────────────────
-document.getElementById('id-zone').addEventListener('click', () => document.getElementById('f-id-file').click());
-document.getElementById('f-id-file').addEventListener('change', function() {
-  const f = this.files[0];
-  document.getElementById('id-status').textContent = f ? '&#128204; ' + f.name + ' (' + (f.size/1024/1024).toFixed(1) + ' MB) — will upload on submit' : '';
-});
+// listeners wired in DOMContentLoaded below
 
 async function uploadID() {
   const input = document.getElementById('f-id-file');
@@ -350,8 +362,36 @@ function showErr(msg) {
   el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
-// ── Init ────────────────────────────────────────────────────
-loadApartments();
+// ── Init ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Set date minimums
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('f-checkin').min  = today;
+  document.getElementById('f-checkout').min = today;
+
+  // Wire upload zone
+  const zone  = document.getElementById('id-zone');
+  const input = document.getElementById('f-id-file');
+  if (zone && input) {
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor='#d4a84a'; });
+    zone.addEventListener('dragleave', () => { zone.style.borderColor=''; });
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); zone.style.borderColor='';
+      if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; input.dispatchEvent(new Event('change')); }
+    });
+    input.addEventListener('change', function() {
+      const f = this.files[0];
+      const status = document.getElementById('id-status');
+      if (status) status.textContent = f
+        ? '📎 ' + f.name + ' (' + (f.size/1024/1024).toFixed(1) + ' MB) — will upload on submit'
+        : '';
+    });
+  }
+
+  // Load apartments
+  loadApartments();
+});
 </script>
 </body>
 </html>
