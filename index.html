@@ -1071,6 +1071,21 @@ function getDemoData(action) {
    FORMAT
 ═══════════════════════════════════════════════════ */
 function N(n){ return '₦'+(parseFloat(n)||0).toLocaleString('en-NG'); }
+
+function fixImgUrl(url) {
+  if (!url) return '';
+  // Convert Google Drive share links to direct view links
+  // Pattern 1: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+  let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return 'https://lh3.googleusercontent.com/d/' + m[1] + '=w800';
+  // Pattern 2: https://drive.google.com/open?id=FILE_ID
+  m = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (m) return 'https://lh3.googleusercontent.com/d/' + m[1] + '=w800';
+  // Pattern 3: already a direct export link
+  if (url.includes('uc?id=') || url.includes('uc?export=view')) return url;
+  // Return as-is for Cloudinary, Imgur, direct URLs etc
+  return url;
+}
 function nights(ci,co){ if(!ci||!co) return 0; return Math.max(0,Math.round((new Date(co)-new Date(ci))/86400000)); }
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
@@ -1177,8 +1192,8 @@ function renderApts(apts) {
     return `<div class="apt-card" onclick="openBookingModal('${esc(a.ApartmentID)}')">
       <div class="apt-card-img-wrap">
         ${a.ImageURL
-          ?`<img class="apt-card-img" src="${esc(a.ImageURL)}" alt="${esc(cleanN)}" loading="lazy"
-              onerror="this.parentElement.innerHTML='<div class=apt-card-img-ph><i class=fas fa-building></i><span>${esc(a.Type)} Apartment</span></div>'">`
+          ?`<img class="apt-card-img" src="${fixImgUrl(a.ImageURL)}" alt="${esc(cleanN)}" loading="lazy"
+              onerror="this.style.display='none';this.parentElement.querySelector('.apt-card-img-ph')||this.insertAdjacentHTML('afterend','<div class=apt-card-img-ph><i class=fas fa-building></i><span>${esc(a.Type)}</span></div>')">`
           :`<div class="apt-card-img-ph"><i class="fas fa-building"></i><span>${esc(a.Type)} Apartment</span></div>`
         }
         <div class="apt-type-badge">${esc(a.Type)}</div>
@@ -1288,7 +1303,7 @@ function openBookingModal(aptId) {
   // Preview
   const imgEl = document.getElementById('bm-img');
   if(apt.ImageURL){
-    imgEl.innerHTML=`<img src="${esc(apt.ImageURL)}" style="width:100%;height:100%;object-fit:cover" alt="${esc(cName)}" onerror="this.outerHTML='<i class=fas fa-building style=font-size:1.8rem></i>'">`;
+    imgEl.innerHTML=`<img src="${fixImgUrl(apt.ImageURL)}" style="width:100%;height:100%;object-fit:cover" alt="${esc(cName)}" onerror="this.outerHTML='<i class=fas fa-building style=font-size:1.8rem></i>'">`;
   } else {
     imgEl.innerHTML='<i class="fas fa-building" style="font-size:1.8rem"></i>';
   }
